@@ -28,12 +28,18 @@
 		"python.linting.mypyPath": "/usr/local/py-utils/bin/mypy",
 		"python.linting.pycodestylePath": "/usr/local/py-utils/bin/pycodestyle",
 		"python.linting.pydocstylePath": "/usr/local/py-utils/bin/pydocstyle",
-		"python.linting.pylintPath": "/usr/local/py-utils/bin/pylint"
+		"python.linting.pylintPath": "/usr/local/py-utils/bin/pylint",
+
+		"python.languageServer": "Pylance",
 	},
 
 	// Add the IDs of extensions you want installed when the container is created.
 	"extensions": [
-		"ms-python.python"
+		"ms-python.python",
+
+		"ms-python.vscode-pylance",
+		"visualstudioexptteam.vscodeintellicode",
+		"christian-kohler.path-intellisense",
 	],
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
