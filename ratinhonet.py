@@ -1,3 +1,5 @@
+import random
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -5,64 +7,90 @@ import sounddevice as sd
 import soundfile as sf
 import typer
 
+CALLBACKS_PER_SECOND = 100
+CHANNELS = 1
+
+
 app = typer.Typer()
 
-countdown = 0
-old_mean = 0
+
+class Callback:
+    def __init__(self, squeaks, cooldown, cut_off, verbose):
+        self._squeaks = squeaks
+        self._cooldown = cooldown
+        self._cut_off = cut_off
+        self._verbose = verbose
+
+        self._countdown = self._cooldown
+        self._update_weight = 0.03
+        self._old_mean = 0
+
+    def __call__(self, amplitudes, frames, *_):
+        # print(frames)
+
+        volumes = np.abs(amplitudes)
+        current_mean = np.mean(volumes)
+        mean_ratio = current_mean / self._old_mean
+
+        if self._verbose:
+            typer.echo(f"countdown: {self._countdown}, mean ratio: {mean_ratio:.2f}\r", nl=False)
+
+        if self._countdown == 0 and mean_ratio > self._cut_off:
+            squeak_data, squeak_sample_rate = random.choice(self._squeaks)
+            sd.play(squeak_data, squeak_sample_rate)
+
+            self._countdown = self._cooldown
+
+        self._countdown -= 1
+        self._countdown = 0 if self._countdown < 0 else self._countdown
+        self._old_mean = (1 - self._update_weight) * self._old_mean + self._update_weight * current_mean  # fmt: skip
 
 
 @app.command()
 def run(
     source: Optional[str] = typer.Argument(
         None,
-        help="Audios source path. If none, use built-in",
+        help="Squeaks source path. If none, use built-in",
     ),
     cooldown: int = typer.Option(
         1_000,
-        help="Wait at least --cooldown seconds before emiting another sound",
+        help="Wait at least --cooldown seconds before squeaking",
     ),
     cut_off: float = typer.Option(
         10,
         help="How much INsensible RatinhoNet should be to sudden volume changes",
     ),
-    log: bool = typer.Option(False),
+    verbose: bool = typer.Option(False),
 ):
     """
-    Run RatinhoNet with SOURCE audios.
+    Run RatinhoNet with SOURCE squeaks.
 
-    Audios should be short (< 5 seconds) WAV files.
+    Squeaks should be short (< 5 seconds) WAV files. The funny, the better.
     """
 
-    update_weight = 0.03
-    channels = 1
+    device, _ = sd.default.device
+    device_informations = sd.query_devices(device)
+    sample_rate = device_informations["default_samplerate"]
 
-    global countdown, old_mean
+    block_size = sample_rate / CALLBACKS_PER_SECOND
 
-    countdown = cooldown
-    old_mean = 0
-    ratinho_sound, ratinho_sample_rate = sf.read("audio/fart.wav")
+    if source is None:
+        source_path = Path(__file__).parent / "squeak"
+    else:
+        source_path = Path(source)
 
-    def callback(amplitudes, frames, time, status):
-        global countdown, old_mean
+    squeaks = [sf.read(file) for file in source_path.iterdir()]
+    callback = Callback(squeaks, cooldown, cut_off, verbose)
 
-        volumes = np.abs(amplitudes)
-        current_mean = np.mean(volumes)
-        mean_ratio = current_mean / old_mean
-
-        if log:
-            typer.echo(f"countdown: {countdown}, mean ratio: {mean_ratio:.2f}\r", nl=False)
-
-        if countdown == 0 and mean_ratio > cut_off:
-            countdown = cooldown
-            sd.play(ratinho_sound, ratinho_sample_rate)
-
-        countdown -= 1
-        countdown = 0 if countdown < 0 else countdown
-        old_mean = (1 - update_weight) * old_mean + update_weight * current_mean
-
-    with sd.InputStream(channels=channels, callback=callback):
+    with sd.InputStream(
+        samplerate=sample_rate,
+        blocksize=block_size,
+        channels=CHANNELS,
+        callback=callback,
+    ):
         input()
 
 
 if __name__ == "__main__":
+    print(sd.default.samplerate)
     app()
