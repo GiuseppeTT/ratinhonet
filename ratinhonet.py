@@ -11,11 +11,8 @@ CALLBACKS_PER_SECOND = 100
 CHANNELS = 1
 
 
-app = typer.Typer()
-
-
 class Callback:
-    def __init__(self, squeaks, cooldown, cut_off, verbose):
+    def __init__(self, squeaks: list, cooldown: int, cut_off: float, verbose: bool):
         self._squeaks = squeaks
         self._cooldown = cooldown
         self._cut_off = cut_off
@@ -25,9 +22,7 @@ class Callback:
         self._update_weight = 0.03
         self._old_mean = 0
 
-    def __call__(self, amplitudes, frames, *_):
-        # print(frames)
-
+    def __call__(self, amplitudes: np.ndarray, *_):
         volumes = np.abs(amplitudes)
         current_mean = np.mean(volumes)
         mean_ratio = current_mean / self._old_mean
@@ -46,6 +41,9 @@ class Callback:
         self._old_mean = (1 - self._update_weight) * self._old_mean + self._update_weight * current_mean  # fmt: skip
 
 
+app = typer.Typer()
+
+
 @app.command()
 def run(
     source: Optional[str] = typer.Argument(
@@ -53,8 +51,8 @@ def run(
         help="Squeaks source path. If none, use built-in",
     ),
     cooldown: int = typer.Option(
-        1_000,
-        help="Wait at least --cooldown seconds before squeaking",
+        5,
+        help="Wait at least --cooldown seconds before squeaking again",
     ),
     cut_off: float = typer.Option(
         10,
@@ -72,7 +70,7 @@ def run(
     device_informations = sd.query_devices(device)
     sample_rate = device_informations["default_samplerate"]
 
-    block_size = sample_rate / CALLBACKS_PER_SECOND
+    block_size = int(sample_rate / CALLBACKS_PER_SECOND)
 
     if source is None:
         source_path = Path(__file__).parent / "squeak"
@@ -80,17 +78,20 @@ def run(
         source_path = Path(source)
 
     squeaks = [sf.read(file) for file in source_path.iterdir()]
+    cooldown = cooldown * CALLBACKS_PER_SECOND
     callback = Callback(squeaks, cooldown, cut_off, verbose)
 
-    with sd.InputStream(
+    stream = sd.InputStream(
         samplerate=sample_rate,
         blocksize=block_size,
         channels=CHANNELS,
         callback=callback,
-    ):
-        input()
+    )
+
+    stream.start()
+    input()
+    stream.stop()
 
 
 if __name__ == "__main__":
-    print(sd.default.samplerate)
     app()
