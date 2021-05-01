@@ -24,8 +24,12 @@ def run(
         5,
         help="Wait at least --cooldown seconds before squeaking again",
     ),
+    half_life: float = typer.Option(
+        0.5,
+        help="Half life of RatinhoNet's memory in seconds. The bigger, the more slowly RatinhoNet will adapt to volume changes.",
+    ),
     cut_off: float = typer.Option(
-        10,
+        5,
         help="How much INsensible RatinhoNet should be to sudden volume changes",
     ),
     verbose: bool = typer.Option(False),
@@ -41,7 +45,8 @@ def run(
 
     squeaks = read_squeaks(source)
     initial_countdown = compute_initial_countdown(cooldown)
-    callback = Callback(squeaks, initial_countdown, cut_off, verbose)
+    update_weight = compute_update_weight(half_life)
+    callback = Callback(squeaks, initial_countdown, update_weight, cut_off, verbose)
 
     stream = sd.InputStream(
         samplerate=sample_rate,
@@ -82,15 +87,32 @@ def compute_initial_countdown(cooldown):
     return int(cooldown * CALLBACKS_PER_SECOND)
 
 
+def compute_update_weight(half_life):
+    half_life = half_life * CALLBACKS_PER_SECOND
+    update_weight = 1 - np.exp(-np.log(2) / half_life)
+
+    return update_weight
+
+
 class Callback:
-    def __init__(self, squeaks: list, initial_countdown: int, cut_off: float, verbose: bool):
+    def __init__(
+        self,
+        squeaks: list,
+        initial_countdown: int,
+        update_weight: float,
+        cut_off: float,
+        verbose: bool,
+    ):
         self._squeaks = squeaks
         self._initial_countdown = initial_countdown
+        self._update_weight = update_weight
         self._cut_off = cut_off
         self._verbose = verbose
 
+        self._initiate_atributes()
+
+    def _initiate_atributes(self):
         self._countdown = self._initial_countdown
-        self._update_weight = 0.03
         self._old_mean = 0
 
     def __call__(self, amplitudes: np.ndarray, *_):
